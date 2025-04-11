@@ -1,0 +1,7 @@
+echo "# Colossus2.0_Tech_Titans" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/Puni6362/Colossus2.0_Tech_Titans.git
+git push -u origin main
