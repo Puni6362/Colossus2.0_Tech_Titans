@@ -1,7 +1,130 @@
-echo "# Colossus2.0_Tech_Titans" >> README.md
-git init
-git add README.md
-git commit -m "first commit"
-git branch -M main
-git remote add origin https://github.com/Puni6362/Colossus2.0_Tech_Titans.git
-git push -u origin main
+#define TINY_GSM_MODEM_SIM800 // Adjust based on your module
+#include <TinyGsmClient.h>
+#include <SoftwareSerial.h>
+#include <Servo.h>
+
+// Define pins for components
+const int LPG_sensor1 = A0;  // First MQ-2 sensor analog pin 
+const int LPG_sensor2 = A1;  // Second MQ-2 sensor analog pin
+const int FIRE_sensor = A5;  // IR fire sensor analog pin
+const int LED = 12;          // LED pin
+const int BUZZER = 3;       // Buzzer pin
+const int servoPin = 11;     // Servo motor pin
+const int gsmRxPin = 7;      // GSM RX pin
+const int gsmTxPin = 8;      // GSM TX pin
+
+Servo myservo;               // Create a servo object to control the servo
+int sensorValue1 = 0;        // Variable to store the first MQ-2 sensor value (analog reading)
+int sensorValue2 = 0;        // Variable to store the second MQ-2 sensor value (analog reading)
+int fireValue = 0;           // Variable to store the IR fire sensor value (analog reading)
+int gasThreshold = 300;       // Threshold for detecting gas (adjust as needed)
+int gasThreshold2 = 400;
+int fireThreshold = 300;    // Threshold for detecting fire (adjust as needed)
+int pos = 0;                 // Initial servo position (Valve closed)
+
+SoftwareSerial SerialGSM(gsmRxPin, gsmTxPin);  // RX, TX for GSM module
+TinyGsm modem(SerialGSM);
+
+// Replace with your phone numbers and messages
+const char *userPhoneNumber = "+918660075009";
+const char *fireStationPhoneNumber = "+917483571709";
+const char *gasAlertMessage = "Alert! Gas leak detected";
+const char *fireAlertMessage = " Alert!  Fire detected at location: <12.9651221>, <77.5055315>";
+
+// Setup function runs once when you press reset or power the board
+void setup() {
+  Serial.begin(9600);       // Start serial communication for debugging
+  SerialGSM.begin(9600);    // Start serial communication with GSM module
+  pinMode(LED, OUTPUT);     // Set LED pin as output
+  pinMode(BUZZER, OUTPUT);  // Set buzzer pin as output
+  myservo.attach(servoPin); // Attach the servo to the designated pin
+  myservo.write(pos);       // Set the servo to initial position (valve closed)
+  Serial.println("Gas Leakage and Fire Detection System");
+
+  // Initialize GSM module
+  Serial.println("Initializing GSM module...");
+  modem.restart();
+
+  // Check GSM signal strength
+  int signalQuality = modem.getSignalQuality();
+  Serial.print("Signal quality: ");
+  Serial.println(signalQuality);
+
+  // Wait for network registration
+  bool connected = false;
+  for (int i = 0; i < 10; i++) { // Attempt 10 times
+    if (modem.isNetworkConnected()) {
+      connected = true;
+      break;
+    }
+    delay(2000); // Wait 2 seconds between attempts
+  }
+
+  if (connected) {
+    Serial.println("GSM module initialized and connected to network.");
+  } else {
+    Serial.println("Failed to connect to network.");
+  }
+
+  // Set GSM module to text mode
+  SerialGSM.println("AT+CMGF=1");
+  delay(1000);
+}
+
+// Function to send SMS
+void sendSMS(const char* phoneNumber, const char* message) {
+  SerialGSM.print("AT+CMGS=\"");
+  SerialGSM.print(phoneNumber);
+  SerialGSM.println("\"");
+  delay(1000);
+  SerialGSM.println(message);
+  delay(1000);
+  SerialGSM.write(26);  // ASCII code for Ctrl+Z to send SMS
+  delay(1000);
+}
+
+// Main loop function runs repeatedly
+void loop() {
+  sensorValue1 = analogRead(LPG_sensor1); // Read the first MQ-2 sensor value (0-1023)
+  sensorValue2 = analogRead(LPG_sensor2); // Read the second MQ-2 sensor value (0-1023)
+  fireValue = analogRead(FIRE_sensor);    // Read the IR fire sensor value (0-1023)
+
+  Serial.print("Gas Sensor 1 Value: ");
+  Serial.println(sensorValue1);           // Print the first gas sensor value for debugging
+  Serial.print("Gas Sensor 2 Value: ");
+  Serial.println(sensorValue2);           // Print the second gas sensor value for debugging
+  Serial.print("Fire Sensor Value: ");
+  Serial.println(fireValue);              // Print the fire sensor value for debugging
+
+  if (sensorValue1 > gasThreshold2 || sensorValue2 > gasThreshold) { // If either gas sensor value exceeds the threshold (gas detected)
+    Serial.println("Gas Detected!");     // Print message for debugging
+    digitalWrite(LED, HIGH);             // Turn on LED to indicate leakage
+    digitalWrite(BUZZER, HIGH);          // Turn on buzzer to alert
+    myservo.write(150);                  // Open the valve by moving the servo (adjust as needed)
+    delay(1000);                         // Wait for 1 second
+
+    // Send SMS with gas alert
+    sendSMS(userPhoneNumber, gasAlertMessage);
+    Serial.println("Gas alert SMS sent to user.");
+  }
+
+  if (fireValue < fireThreshold) {       // If the fire sensor value exceeds the threshold (fire detected)
+    Serial.println("Fire Detected!");    // Print message for debugging
+    digitalWrite(LED, HIGH);             // Turn on LED to indicate fire
+    digitalWrite(BUZZER, HIGH);          // Turn on buzzer to alert
+    myservo.write(150);                  // Open the valve by moving the servo (adjust as needed)
+    delay(1000);                         // Wait for 1 second
+
+    // Send SMS with fire alert
+    sendSMS(fireStationPhoneNumber, fireAlertMessage);
+    Serial.println("Fire alert SMS sent to fire station.");
+  }
+
+  if (sensorValue1 <= gasThreshold2 && sensorValue2 <= gasThreshold && fireValue <= fireThreshold) { // No gas or fire detected
+    Serial.println("No Gas or Fire Detected");
+    digitalWrite(LED, LOW);              // Turn off LED
+    digitalWrite(BUZZER, LOW);           // Turn off buzzer
+  }
+
+  delay(500);  // Delay before checking again
+}
